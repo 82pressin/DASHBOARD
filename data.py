@@ -74,3 +74,7 @@ def pie_chart(df):
                        color_discrete_sequence = ['#FF6B6B', '#4ECDC4', '#1A535C'])
           
           st.plotly_chart(fig, use_container_width=True)
+
+def footer():
+    st.markdown("---")
+    st.markdown("© INTAN BEYOND THE STAR - 184240014")
