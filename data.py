@@ -4,26 +4,26 @@ import plotly.express as px
 
 def load_data():
           df = pd.read_csv("covid_19_indonesia_time_series_all.csv")
+          df = df[df['Location'] != 'Indonesia']
           return df
 
-def filter_data(df, year = None):
+def filter_data(df, year = None, location = None):
           if year:
-                    df = df[df['Date'].astype(str).str.contains(str(year))]
+              df = df[df['Date'].astype(str).str.contains(str(year))]
+          if location:
+              df = df[df['Location'].isin(location)]
           return df
 
 def pilih_tahun():
-          options = [None, 2020, 2021, 2022]
-          
-          def format_tahun(tahun):
-                    if tahun is None:
-                              return "Semua Tahun"
-                    return str(tahun)
-          
-          select_year = st.sidebar.selectbox(
-                    "Pilih Tahun",
-                    options,
-                    format_func=format_tahun)
-          return select_year
+    return st.sidebar.selectbox("Pilih Tahun", options = [None, 2020, 2021, 2022],
+                                format_func=lambda x: "Semua Tahun" if x is None else str(x))
+
+def pilih_provinsi(df):
+    locations = sorted(df['Location'].unique())
+    
+    return st.sidebar.multiselect("Pilih Provinsi", 
+                                    options = locations,
+                                    default = locations)
 
 def show_data(df):
           selected_columns = ['Location'] + list(df.loc[:, 'Total Cases':'Total Recovered'].columns)
@@ -35,16 +35,16 @@ def show_data(df):
           st.write(df_selected.describe())
 
 def total_cases(df):
-          total_cases = df['Total Cases'].sum()
-          return total_cases
+          total_cases = df.sort_values('Date').groupby('Location', as_index = False).last()
+          return total_cases['Total Cases'].sum()
 
 def total_deaths(df):
-          total_deaths = df['Total Deaths'].sum()
-          return total_deaths
+          total_deaths = df.sort_values('Date').groupby('Location', as_index = False).last()
+          return total_deaths['Total Deaths'].sum()
 
 def total_recoveries(df):
-          total_recoveries = df['Total Recovered'].sum()
-          return total_recoveries
+          total_recoveries = df.sort_values('Date').groupby('Location', as_index = False).last()
+          return total_recoveries['Total Recovered'].sum()
 
 def kolom(df):
           kasus = total_cases(df)
@@ -57,24 +57,66 @@ def kolom(df):
           col2.metric(label="Total Kematian ☠️", value=f"{kematian/1000:.1f}k", border=True)
           col3.metric(label="Total Kesembuhan 🌿", value=f"{kesembuhan/1000:.1f}k", border=True)
 
+
 def pie_chart(df):
-          total_cases = df['Total Cases'].sum()
           total_deaths = df['Total Deaths'].sum()
           total_recoveries = df['Total Recovered'].sum()
           
           data = {
-                    'Status' : ['Total Kasus', 'Total Kematian', 'Total Kesembuhan'],
-                    'Jumlah' : [total_cases, total_deaths, total_recoveries]}
+                    'Status' : ['Total Kematian', 'Total Kesembuhan'],
+                    'Jumlah' : [total_deaths, total_recoveries]}
           
           fig = px.pie(data, 
-                       names='Status', 
-                       values='Jumlah', 
+                       names='Status', values='Jumlah', 
                        title='Distribusi Kasus COVID-19 di Indonesia', 
-                       hole = 0.5, 
-                       color_discrete_sequence = ['#FF6B6B', '#4ECDC4', '#1A535C'])
+                       hole = 0.5, color_discrete_sequence = ['#4ECDC4', '#FF6B6B'])
           
           st.plotly_chart(fig, use_container_width=True)
 
-def footer():
-    st.markdown("---")
-    st.markdown("© INTAN BEYOND THE STAR - 184240014")
+def bar_chart1(df):
+    df_last = df.sort_values('Date').groupby('Location', as_index=False).last()
+    top5 = df_last.nlargest(5, 'Total Deaths')
+    
+    fig = px.bar(top5, x='Location', y='Total Deaths',
+                 title='5 Provinsi dengan Total Kematian Tertinggi',
+                 color='Total Deaths', color_continuous_scale='Reds',
+                 labels={'Total Deaths': 'Total Kematian', 'Location': 'Provinsi'})
+    
+    fig.update_layout(xaxis_title='Provinsi', yaxis_title='Total Kematian')
+    st.plotly_chart(fig, use_container_width=True)
+
+def bar_chart2(df):
+    df_last = df.sort_values('Date').groupby('Location', as_index=False).last()
+    top5 = df_last.nlargest(5, 'Total Recovered')
+    
+    fig = px.bar(top5, x='Location', y='Total Recovered',
+                 title='5 Provinsi dengan Total Kesembuhan Tertinggi',
+                 color='Total Recovered', color_continuous_scale='Greens',
+                 labels={'Total Recovered': 'Total Kesembuhan', 'Location': 'Provinsi'})
+    
+    fig.update_layout(xaxis_title='Provinsi', yaxis_title='Total Kesembuhan')
+    st.plotly_chart(fig, use_container_width=True)
+
+def map_chart(df, year = None):
+    df['Date'] = pd.to_datetime(df['Date'])
+    
+    if year:
+        df = df[df['Date'].dt.year == year]
+        
+    df_agg = df.groupby(['Location', 'Latitude', 'Longitude'], as_index=False)['Total Cases'].sum()
+    df_map = df_agg.dropna(subset=['Latitude', 'Longitude', 'Total Cases'])
+    
+    if df_map.empty:
+        st.info("Peta tidak dapat ditampilkan karena data lokasi tidak lengkap.")
+        return
+    
+    fig = px.scatter_mapbox(df_map, lat='Latitude', lon='Longitude', size='Total Cases',
+                            color='Total Cases', hover_name='Location', zoom=4, 
+                            center={'lat': -2.5, 'lon': 115}, size_max=20, opacity=0.7, 
+                            color_continuous_scale='OrRd', 
+                            title=f'Peta Sebaran Kasus COVID-19 di Indonesia ({year if year else "Semua Tahun"})')
+    
+    fig.update_layout(mapbox_style='open-street-map', height=400, margin={'r':0,'t':30,'l':0,'b':0})
+    
+    st.plotly_chart(fig, use_container_width=True)
+
